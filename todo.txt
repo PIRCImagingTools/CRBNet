@@ -1,0 +1,7 @@
+
+1. Linear reg image to template space, apply to ALBERT seg
+  a) provide CSV of locations
+  b) apply reg and extract CRB
+2. Prep crb: extract CRB from pre-registered ALBERT seg and binarize
+3. prep data set: stack CRBs and append vector of classifiers
+4. NN: customize network class
