@@ -1,8 +1,6 @@
-from nipy import load_image, save_image
-import numpy as np
 import getpass
-from nipy.core.apy import Image
 from nipype.interfaces import fsl
+import os
 
 user=getpass.getuser()
 
@@ -17,8 +15,8 @@ class CRB_PREP(object):
 
     def __init__(self, parent_dir, orig_brain, man_seg, PCA):
         self.parent_dir = parent_dir
-        self.orig_brain = parent_dir+'T2_Bias_Corrected/'+orig_brain
-        self.man_seg = parent_dir+man_seg
+        self.orig_brain = orig_brain
+        self.man_seg = man_seg
         self.PCA = PCA
 
     def reg_brain(self):
@@ -26,11 +24,11 @@ class CRB_PREP(object):
         if self.PCA >= 44:
             self.outmatrix_crb = self.parent_dir+'reg_to_CRB_template.mat'
             flt = fsl.FLIRT()
-            flt.inputs.in_file =  self.brain
+            flt.inputs.in_file =  self.orig_brain
             flt.inputs.reference = CRB_BRAIN
             flt.inputs.out_matrix_file = self.outmatrix_crb
             flt.inputs.out_file = self.parent_dir + 'reg_to_CRB_template.nii.gz'
-            flt.cmdline()
+            print(flt.cmdline)
             flt.run()
 
             #apply reg to segmentation
@@ -38,10 +36,11 @@ class CRB_PREP(object):
             app = fsl.FLIRT()
             app.inputs.in_file = self.man_seg
             app.inputs.reference = self.get_template()
-            app.inpus.apply_xfm = True
+            app.inputs.apply_xfm = True
             app.inputs.in_matrix_file =  self.outmatrix_crb
+            app.inputs.interp = 'nearestneighbour'
             app.inputs.out_file = self.parent_dir + 'manual_seg_reg_to_CRB_template.nii.gz'
-            app.cmdline()
+            print(app.cmdline)
             app.run()
 
         else:
@@ -49,11 +48,11 @@ class CRB_PREP(object):
 
             self.outmatrix_pca = self.parent_dir+'reg_to_PCA_template.mat'
             flt_pca = fsl.FLIRT()
-            flt_pca.inputs.in_file =  self.brain
+            flt_pca.inputs.in_file =  self.orig_brain
             flt_pca.inputs.reference = self.get_template()
-            flt_pca.inputs.out_matrix_file = self.outmatrix_orig
+            flt_pca.inputs.out_matrix_file = self.outmatrix_pca
             flt_pca.inputs.out_file = self.parent_dir + 'reg_to_PCA_template.nii.gz'
-            flt_pca.cmdline()
+            print(flt_pca.cmdline)
             flt_pca.run()
 
             #apply reg to segmentation
@@ -61,10 +60,11 @@ class CRB_PREP(object):
             app_pca = fsl.FLIRT()
             app_pca.inputs.in_file = self.man_seg
             app_pca.inputs.reference = self.get_template()
-            app_pca.inpus.apply_xfm = True
+            app_pca.inputs.apply_xfm = True
             app_pca.inputs.in_matrix_file =  self.outmatrix_pca
+            app_pca.inputs.interp = 'nearestneighbour'
             app_pca.inputs.out_file = self.parent_dir + 'manual_seg_reg_to_PCA_template.nii.gz'
-            app_pca.cmdline()
+            print(app_pca.cmdline)
             app_pca.run()
 
             #REG PCA REG TO OLDEST
@@ -75,17 +75,19 @@ class CRB_PREP(object):
             flt_crb.inputs.reference =  CRB_BRAIN
             flt_crb.inputs.out_matrix_file = self.outmatrix_CRB
             flt_crb.inputs.out_file = self.parent_dir + 'reg_to_CRB_template.nii.gz'
-            flt_crb.cmdline()
+            print(flt_crb.cmdline)
             flt_crb.run()
 
             #apply reg to segmentation
 
             app_crb = fsl.FLIRT()
             app_crb.inputs.in_file = self.parent_dir + 'manual_seg_reg_to_PCA_template.nii.gz'
-            app_crb.inpus.apply_xfm = True
-            app_crb.inputs.in_matrix_file =  self.outmatrix_pca
+            app_crb.inputs.reference = CRB_BRAIN
+            app_crb.inputs.apply_xfm = True
+            app_crb.inputs.in_matrix_file =  self.outmatrix_CRB
+            app_crb.inputs.interp = 'nearestneighbour'
             app_crb.inputs.out_file = self.parent_dir + 'manual_seg_reg_to_CRB_template.nii.gz'
-            app_crb.cmdline()
+            print(app_crb.cmdline)
             app_crb.run()
 
 
@@ -98,31 +100,57 @@ class CRB_PREP(object):
             return self.PCA - 28
 
     def get_template(self):
-        outfile_nii = self.parent_dir+'/template.nii.gz'
+        outfile_nii = self.parent_dir+'pca_template.nii.gz'
         fslroi = fsl.ExtractROI(in_file=template_stack,
                             roi_file=outfile_nii,
                             t_min=self.get_index(),
                             t_size=1)
         fslroi.run()
+        return self.parent_dir+'pca_template.nii.gz'
 
 
-    def get_crb(self, std_seg_nii, output):
-        brain = load_image(std_seg_nii)
+    def reg_crb(self):
 
-    def add_to_stack(std_crb_nii, stack, class_vector):
-        crb = load_image(std_crb_nii)
+        get_crb = fsl.ImageMaths()
+        get_crb.inputs.op_string = '-thr {0:.1f} -uthr {1:.1f}'.format(LCRB-0.5,RCRB+0.5)
+        get_crb.inputs.in_file = self.parent_dir + 'manual_seg_reg_to_CRB_template.nii.gz'
+        get_crb.inputs.out_file = self.parent_dir + 'extracted_CRB.nii.gz'
+        print(get_crb.cmdline)
+        get_crb.run()
+
+
+        flt_crb = fsl.FLIRT()
+        flt_crb.inputs.in_file =  self.parent_dir + 'extracted_CRB.nii.gz'
+        flt_crb.inputs.reference =  CRB_TEMPLATE
+        flt_crb.inputs.out_file = self.parent_dir + 'registered_extracted_CRB.nii.gz'
+        print(flt_crb.cmdline)
+        flt_crb.run()
+
+    def add_to_stack(self, stack):
+        if os.path.isfile(stack):
+            self.stack = stack
+        else:
+            self.stack = './res/CRB_Template.nii.gz'
+        merger = fsl.Merge()
+        merger.inputs.in_files = [self.stack, self.parent_dir + 'registered_extracted_CRB.nii.gz']
+        merger.inputs.dimension = 't'
+        merger.inputs.merged_file = stack
+        print(merger.cmdline)
+        merger.run()
 
 
 if __name__ == '__main__':
 
     parent_dir = '/home/rafa/Neonates/CHD_132/'
-    orig_brain =  parent_dir + 'T2_Bias_Corrected/'
+    orig_brain =  parent_dir + 'T2_Bias_Corrected/T2_Bias_Corrected.nii.gz'
     man_seg = parent_dir + 'CHD_132_ManualSeg.nii'
     PCA = 36
 
+    STACK = '/home/rafa/Neonates/MERGED_CRBS.nii.gz'
+
     prep = CRB_PREP(parent_dir, orig_brain, man_seg, PCA)
     prep.reg_brain()
+    prep.reg_crb()
+    prep.add_to_stack(STACK)
 
 
-    template = get_template(template_nii, get_index(PCA))
-    reg_brain(orig_brain, man_seg, template)
