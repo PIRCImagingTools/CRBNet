@@ -1,4 +1,9 @@
-"""network3.py
+"""
+Modified from:
+network3.py
+
+by Michael Nielsen
+neuralnetworksanddeeplearning.com/chap6.html
 ~~~~~~~~~~~~~~
 
 A Theano-based program for training and running simple neural
@@ -50,17 +55,23 @@ from theano.tensor import tanh
 
 #### Constants
 GPU = True
+
 if GPU:
     print "Trying to run under a GPU.  If this is not desired, then modify "+\
-        "network3.py\nto set the GPU flag to False."
+        "network.py\nto set the GPU flag to False."
     try: theano.config.device = 'gpu'
     except: pass # it's already set
     theano.config.floatX = 'float32'
 else:
     print "Running with a CPU.  If this is not desired, then the modify "+\
-        "network3.py to set\nthe GPU flag to True."
+        "network.py to set\nthe GPU flag to True."
 
-#### Load the MNIST data
+
+#### Load the data
+############################################################
+#### CHANGE
+##################
+
 def load_data_shared(filename="./mnist.pkl.gz"):
     f = gzip.open(filename, 'rb')
     training_data, validation_data, test_data = cPickle.load(f)
@@ -196,8 +207,12 @@ class ConvPoolLayer(object):
         of filters, the number of input feature maps, the filter height, and the
         filter width.
 
+        NUMBER OF FILTERS: how many new feature maps
+        INPUT FEATURE MAPS: self explanatory
+        FILTER H,W: H,W of local receptive field
+
         `image_shape` is a tuple of length 4, whose entries are the
-        mini-batch size, the number of input feature maps, the image
+        mini-batch size, the number of input feature maps / dimensions, the image
         height, and the image width.
 
         `poolsize` is a tuple of length 2, whose entries are the y and
@@ -230,7 +245,8 @@ class ConvPoolLayer(object):
         pooled_out = downsample.max_pool_2d(
             input=conv_out, ds=self.poolsize, ignore_border=True)
         self.output = self.activation_fn(
-            pooled_out + self.b.dimshuffle('x', 0, 'x', 'x'))
+            pooled_out + self.b.dimshuffle('x', 0, 'x', 'x')) ##dimshuffle broadcasts the bias vector
+                                                              ## across the 3D tensor dimvs
         self.output_dropout = self.output # no dropout in the convolutional layers
 
 class FullyConnectedLayer(object):
@@ -241,23 +257,32 @@ class FullyConnectedLayer(object):
         self.activation_fn = activation_fn
         self.p_dropout = p_dropout
         # Initialize weights and biases
+        # RANDOMLY INITIATED, optimized for sigmoid
         self.w = theano.shared(
             np.asarray(
                 np.random.normal(
                     loc=0.0, scale=np.sqrt(1.0/n_out), size=(n_in, n_out)),
                 dtype=theano.config.floatX),
             name='w', borrow=True)
+
         self.b = theano.shared(
-            np.asarray(np.random.normal(loc=0.0, scale=1.0, size=(n_out,)),
+            np.asarray(np.random.normal(
+                     loc=0.0, scale=1.0, size=(n_out,)),
                        dtype=theano.config.floatX),
-            name='b', borrow=True)
+            name='b',borrow=True)
+
         self.params = [self.w, self.b]
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
+
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
         self.output = self.activation_fn(
             (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
         self.y_out = T.argmax(self.output, axis=1)
+
+        #We use inpt_droput during training, whether we want the option or not.
+        #the function randomly removes neurons from the network (using masked arrays)
+
         self.inpt_dropout = dropout_layer(
             inpt_dropout.reshape((mini_batch_size, self.n_in)), self.p_dropout)
         self.output_dropout = self.activation_fn(

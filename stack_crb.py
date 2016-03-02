@@ -141,10 +141,10 @@ class CRB_PREP(object):
 
 if __name__ == '__main__':
 
-    parent_dir = '/home/rafa/Neonates/CHD_132/'
+    parent_dir = '/home/rafa/Neonates/PT_138/'
     orig_brain =  parent_dir + 'T2_Bias_Corrected/T2_Bias_Corrected.nii.gz'
-    man_seg = parent_dir + 'CHD_132_ManualSeg.nii'
-    PCA = 36
+    man_seg = parent_dir + 'PT_138_ManualSeg.nii'
+    PCA = 32
 
     STACK = '/home/rafa/Neonates/MERGED_CRBS.nii.gz'
 
