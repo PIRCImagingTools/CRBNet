@@ -1,6 +1,7 @@
 import getpass
 from nipype.interfaces import fsl
 import os
+import csv
 
 user=getpass.getuser()
 
@@ -141,16 +142,21 @@ class CRB_PREP(object):
 
 if __name__ == '__main__':
 
-    parent_dir = '/home/rafa/Neonates/PT_138/'
-    orig_brain =  parent_dir + 'T2_Bias_Corrected/T2_Bias_Corrected.nii.gz'
-    man_seg = parent_dir + 'PT_138_ManualSeg.nii'
-    PCA = 32
+    in_file = 'home/pirc/PIRC1-Storage/processing/Neonatal_Segmentation/All_Files.csv'
+    with open(in_file, 'rb') as csvfile:
+        reader = csv.DictReader(csvfile, delimiter=',')
+        for row in reader:
+            print(row['Parent_Directory'])
+            parent_dir = row['Parent_Directory']
+            orig_brain = row['T2_File']
+            man_seg = parent_dir + '/'+ row['Mask_File']
+            PCA = row['PCA']
 
-    STACK = '/home/rafa/Neonates/MERGED_CRBS.nii.gz'
+            STACK = '/home/pirc/PIRC1-Storage/processing/Neonatal_Segmentation/All_Neonates_CRB.nii.gz'
 
-    prep = CRB_PREP(parent_dir, orig_brain, man_seg, PCA)
-    prep.reg_brain()
-    prep.reg_crb()
-    prep.add_to_stack(STACK)
+            prep = CRB_PREP(parent_dir, orig_brain, man_seg, PCA)
+            prep.reg_brain()
+            prep.reg_crb()
+            prep.add_to_stack(STACK)
 
 
