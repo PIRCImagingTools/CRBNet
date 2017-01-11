@@ -1,0 +1,7 @@
+res/
+*.pyc
+*.png
+*Run*
+previous
+err.log
+full_size
