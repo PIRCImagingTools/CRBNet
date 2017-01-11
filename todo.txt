@@ -1,0 +1,27 @@
+
+prep: create CSV with subjects and file locations
+  a) Add PCA and subj_id columns
+DONE1. Linear reg image to template space, apply to manual seg
+  a) provide CSV of locations
+  b) Write a text (or csv) in the right order of IDs, with their dyspl.
+scores
+DONE  b) apply reg and extract CRB
+DONE 2. Prep crb: extract CRB from pre-registered ALBERT seg and binarize
+DONE 3. prep data set: stack CRBs and append vector of classifiers (binarize images?)
+4. NN: customize network class
+DONE a) Change classes to take 3D maps
+DONE b) Need: max_pool_3D, filter_shape needs new dimension 
+   c) Add L1 Norm (plus option in inputs)
+5. Running: Read a .json with the options (to save results and have record)
+   plot training error (in real time?)
+   Grid or random search on validation set
+   create stand alone class to run existing Net on a new subject
+6. Project layers onto template space as heat map?
+
+?. Monitor progress, maybe HTML?
+
+
+REG:
+First, reg brain to PCA template (apply to manual seg)
+Then: reg that to oldest template (apply to manual seg)
+Then: extract CRB and reg that to template CRB
