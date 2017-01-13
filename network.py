@@ -290,6 +290,7 @@ class ConvPoolLayer(object):
         self.activation_fn = get_activation(activation_fn)
         # initialize weights and biases
         n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
+        n_in = np.prod(image_shape[1:])
 
         if activation_fn == "Sigmoid" or activation_fn == "Tanh":
             self.w = theano.shared(
@@ -305,6 +306,21 @@ class ConvPoolLayer(object):
                 name="conv_b",
                 borrow=True)
             self.params = [self.w, self.b]
+
+        elif activation_fn == "ReLU" or activation_fn == "lReLU":
+            self.w = theano.shared(
+                np.asarray(
+                    np.random.normal(loc=0, scale=np.sqrt(2.0/n_in), size=filter_shape),
+                    dtype=theano.config.floatX),
+                name="conv_w",
+                borrow=True)
+            self.b = theano.shared(
+                np.zeros((filter_shape[0],),
+                    dtype=theano.config.floatX)+0.01,
+                name="conv_b",
+                borrow=True)
+            self.params = [self.w, self.b]
+
         else:
             self.w = theano.shared(
                 np.asarray(
@@ -374,6 +390,21 @@ class FullyConnectedLayer(object):
                 name='full_b',borrow=True)
 
             self.params = [self.w, self.b]
+
+        elif activation_fn == "ReLU" or activation_fn == "lReLU":
+            self.w = theano.shared(
+                np.asarray(
+                    np.random.normal(loc=0, scale=np.sqrt(2.0/n_in), size=(n_in,n_out)),
+                    dtype=theano.config.floatX),
+                name="conv_w",
+                borrow=True)
+            self.b = theano.shared(
+                np.zeros((n_out,),
+                    dtype=theano.config.floatX)+0.01,
+                name="conv_b",
+                borrow=True)
+            self.params = [self.w, self.b]
+
         else:
             self.w = theano.shared(
                 np.asarray(
@@ -484,12 +515,15 @@ def dropout_layer(layer, p_dropout):
 # Activation functions for neurons
 def linear(z): return z
 def ReLU(z): return T.maximum(0.0, z)
+def lReLU(z): return T.maxium(0.01*z, z)
 from theano.tensor.nnet import sigmoid
 from theano.tensor import tanh
 
 def get_activation(function):
     if function == "ReLU":
         return ReLU
+    if function =="lReLU":
+        return lReLU
     elif function == "Linear":
         return linear
     elif function == "Sigmoid":
