@@ -133,8 +133,6 @@ class Network(object):
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
         self.logout = open(logfile, 'a')
-        self.logout.write('Epoch,Training_Error,Validation_Error,Test_Error,Mean_Epoch_Cost\n')
-
 
     def SGD(self, training_data, epochs, mini_batch_size, eta,
             validation_data, test_data, lmbda=0.0):
@@ -142,6 +140,8 @@ class Network(object):
         training_x, training_y = training_data
         validation_x, validation_y = validation_data
         test_x, test_y = test_data
+
+        self.logout.write('Epoch,Training_Error,Validation_Error,Test_Error,Mean_Epoch_Cost\n')
 
         # compute number of minibatches for training, validation and testing
         num_training_batches = size(training_data)/mini_batch_size
@@ -242,6 +242,24 @@ class Network(object):
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
+
+    def classify(self, data):
+        classify_x, classify_y = data
+        i = T.lscalar()
+        batches = 22/self.mini_batch_size
+        #print("data size: {0}".format(data_size))
+
+        self.predictions = theano.function(
+           [i],
+           self.layers[-1].y_out,
+           givens={
+               self.x:
+               classify_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]})
+
+        predictions = [self.predictions(j) for j in xrange(batches)]
+        print(predictions)
+        #out_printed = theano.printing.Print()(self.layers[-1].y_out)
+
 
     def save_params(self):
         params = [layer.__getstate__() for layer in self.layers]

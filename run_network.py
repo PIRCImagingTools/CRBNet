@@ -33,6 +33,7 @@ class build_network(object):
         self.layers = [self.build_init(self.network['input_dims'])]
         self.layers_construct = []
         self.logfile =  os.path.dirname(network_file)+'/accuracy.csv'
+        self.predictions = os.path.dirname(network_file)+'/predictions.csv'
         self.params_file = os.path.dirname(network_file)+'/params.save'
         self.restart = self.network['restart']
 
@@ -53,10 +54,6 @@ class build_network(object):
             self.layers_construct.append(lout['construct'])
 
 
-        self.training_data, self.validation_data, self.test_data = nn.load_data_shared(
-            self.network['Data']['TRAIN_STACK'], self.network['Data']['TRAIN_LABELS'],
-            self.network['Data']['VALID_STACK'], self.network['Data']['VALID_LABELS'],
-            self.network['Data']['TEST_STACK'], self.network['Data']['TEST_LABELS'])
 
 
 
@@ -120,7 +117,10 @@ class build_network(object):
         return layer
 
     def run(self):
-#        print(self.layers_construct)
+        self.training_data, self.validation_data, self.test_data = nn.load_data_shared(
+            self.network['Data']['TRAIN_STACK'], self.network['Data']['TRAIN_LABELS'],
+            self.network['Data']['VALID_STACK'], self.network['Data']['VALID_LABELS'],
+            self.network['Data']['TEST_STACK'], self.network['Data']['TEST_LABELS'])
 
         net = nn.Network(self.layers_construct,
                          self.network['mini_batch_size'],
@@ -130,6 +130,15 @@ class build_network(object):
         net.SGD(self.training_data, self.network['epochs'],
                 self.network['mini_batch_size'], self.network['eta'],
                 self.validation_data, self.test_data, self.network['lmbda'])
+
+    def classify(self, data):
+        net = nn.Network(self.layers_construct,
+                         self.network['mini_batch_size'],
+                         params_file = self.params_file,
+                         logfile=self.predictions,
+                         restart=True)
+
+        net.classify(data)
 
 
 
