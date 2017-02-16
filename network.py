@@ -255,9 +255,14 @@ class Network(object):
            givens={
                self.x:
                classify_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]})
+#               classify_x[i:-1]})
 
-        predictions = [self.predictions(j) for j in xrange(batches)]
+
+#        predictions = [self.predictions(j) for j in xrange(batches)]
+        predictions = [self.predictions(0)]
+
         print(predictions)
+        print(batches)
         #out_printed = theano.printing.Print()(self.layers[-1].y_out)
 
 

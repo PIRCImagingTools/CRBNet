@@ -25,11 +25,15 @@ import numpy as np
 import sys,os
 
 class build_network(object):
-    def __init__(self, network_file):
+    def __init__(self, network_file, classify=False):
 
         with open(network_file) as net_data:
             self.network = json.load(net_data)
 
+        if classify:
+            self.minibatch_size = 22
+        else:
+            self.minibatch_size = self.network['minibatch_size']
         self.layers = [self.build_init(self.network['input_dims'])]
         self.layers_construct = []
         self.logfile =  os.path.dirname(network_file)+'/accuracy.csv'
@@ -67,7 +71,7 @@ class build_network(object):
 
         in_shape = self.layers[-1]['out_dims']
         feature_maps = np.asarray(layer['feature_maps'])
-        image_shape=[[self.network['mini_batch_size']], in_shape.tolist()]
+        image_shape=[[self.minibatch_size], in_shape.tolist()]
         filter_shape=([feature_maps.tolist()], [in_shape[0]], layer['lrf'])
 
         construct = nn.ConvPoolLayer(
@@ -123,17 +127,17 @@ class build_network(object):
             self.network['Data']['TEST_STACK'], self.network['Data']['TEST_LABELS'])
 
         net = nn.Network(self.layers_construct,
-                         self.network['mini_batch_size'],
+                         self.minibatch_size,
                          params_file = self.params_file,
                          logfile=self.logfile,
                          restart=self.restart)
         net.SGD(self.training_data, self.network['epochs'],
-                self.network['mini_batch_size'], self.network['eta'],
+                self.minibatch_size, self.network['eta'],
                 self.validation_data, self.test_data, self.network['lmbda'])
 
     def classify(self, data):
         net = nn.Network(self.layers_construct,
-                         self.network['mini_batch_size'],
+                         self.minibatch_size,
                          params_file = self.params_file,
                          logfile=self.predictions,
                          restart=True)
