@@ -23,6 +23,51 @@ import network as nn
 import time
 import numpy as np
 import sys,os
+from nipy import load_image
+import theano
+import theano.tensor as T
+
+
+def load_data_shared(TRAIN_STACK, TRAIN_LABELS,
+                     VALID_STACK, VALID_LABELS,
+                     TEST_STACK, TEST_LABELS):
+
+    def get_nii_data(nifti_file):
+        image = load_image(nifti_file)
+        data = image.get_data().transpose(3, 0, 1, 2)
+        print "data shape:"
+        print data.shape
+        return data
+
+    def get_text_data(text_file):
+        vector = []
+        with open(text_file) as f:
+            for line in f:
+                vector.append(line.rstrip())
+        return np.asarray(vector)
+
+
+    def shared(DATA, LABELS):
+        """Place the data into shared variables.  This allows Theano to copy
+        the data to the GPU, if one is available.
+        Shuffles index first to hopefully improve mini batch learning
+
+        """
+        idx = np.arange(len(DATA))
+        np.random.shuffle(idx)
+
+        shared_x = theano.shared(
+            np.asarray(DATA[idx], dtype=theano.config.floatX), borrow=True)
+        shared_y = theano.shared(
+            np.asarray(LABELS[idx], dtype=theano.config.floatX), borrow=True)
+        return shared_x, T.cast(shared_y, "int32")
+
+    return [shared(get_nii_data(TRAIN_STACK),get_text_data(TRAIN_LABELS)),
+            shared(get_nii_data(VALID_STACK), get_text_data(VALID_LABELS)),
+            shared(get_nii_data(TEST_STACK), get_text_data(TEST_LABELS))
+            ]
+
+
 
 class build_network(object):
     def __init__(self, network_file, classify=False):
@@ -121,7 +166,7 @@ class build_network(object):
         return layer
 
     def run(self):
-        self.training_data, self.validation_data, self.test_data = nn.load_data_shared(
+        self.training_data, self.validation_data, self.test_data = load_data_shared(
             self.network['Data']['TRAIN_STACK'], self.network['Data']['TRAIN_LABELS'],
             self.network['Data']['VALID_STACK'], self.network['Data']['VALID_LABELS'],
             self.network['Data']['TEST_STACK'], self.network['Data']['TEST_LABELS'])
