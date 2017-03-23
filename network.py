@@ -43,6 +43,8 @@ from theano.tensor.nnet import softmax
 from theano.tensor import shared_randomstreams
 import pool_ext as pool
 import cPickle
+import matplotlib.pyplot as plt
+
 
 
 
@@ -68,7 +70,7 @@ import cPickle
 #### Main class used to construct and train networks
 class Network(object):
 
-    def __init__(self, layers, mini_batch_size, params_file, logfile, restart=False):
+    def __init__(self, layers, mini_batch_size, params_file, logfile, figfile="", restart=False):
         """Takes a list of `layers`, describing the network architecture, and
         a value for the `mini_batch_size` to be used during training
         by stochastic gradient descent.
@@ -92,6 +94,7 @@ class Network(object):
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
         self.logout = open(logfile, 'a')
+        self.figfile = figfile
 
     def SGD(self, training_data, epochs, mini_batch_size, eta,
             validation_data, test_data, lmbda=0.0):
@@ -159,6 +162,11 @@ class Network(object):
             })
         # Do the actual training
         best_validation_accuracy = 0.0
+        mean_cost = []
+        train_accuracy_list = []
+        val_accuracy_list = []
+        test_accuracy_list = []
+
         for epoch in xrange(epochs):
             for minibatch_index in xrange(num_training_batches):
                 iteration = num_training_batches*epoch+minibatch_index
@@ -168,10 +176,13 @@ class Network(object):
                 if (iteration+1) % num_training_batches == 0:
                     epoch_cost = np.mean(
                         [train_mb(j) for j in xrange(num_test_batches)])
+                    mean_cost.append(epoch_cost)
                     validation_accuracy = np.mean(
                         [validate_mb_accuracy(j) for j in xrange(num_validation_batches)])
+                    val_accuracy_list.append(validation_accuracy)
                     training_accuracy = np.mean(
                                 [training_mb_accuracy(j) for j in xrange(num_training_batches)])
+                    train_accuracy_list.append(training_accuracy)
                     print("\nEpoch {0}\n".format(epoch)+\
                           "training accuracy: {0:.2%}\n".format(training_accuracy)+\
                           "validation accuracy: {0:.2%}\n".format(validation_accuracy)+\
@@ -182,12 +193,13 @@ class Network(object):
                         best_validation_accuracy = validation_accuracy
                         best_iteration = iteration
                         self.save_params()
-                        if test_data:
-                            test_accuracy = np.mean(
-                                [test_mb_accuracy(j) for j in xrange(num_test_batches)])
+                    if test_data:
+                        test_accuracy = np.mean(
+                            [test_mb_accuracy(j) for j in xrange(num_test_batches)])
+                        test_accuracy_list.append(test_accuracy)
 
-                            print('The corresponding test accuracy is {0:.2%}'.format(
-                                test_accuracy))
+                        print('The corresponding test accuracy is {0:.2%}'.format(
+                            test_accuracy))
                     self.logout.write('{0},{1},{2},{3},{4}\n'.format(
                                                                   epoch,
                                                                   training_accuracy,
@@ -195,6 +207,8 @@ class Network(object):
                                                                   test_accuracy,
                                                                   epoch_cost,'\n'))
                     self.logout.flush()
+                    self.plot_metrics(epoch,mean_cost, train_accuracy_list,
+                                      val_accuracy_list, test_accuracy_list)
 
         print("Finished training network.")
         self.logout.close()
@@ -205,8 +219,7 @@ class Network(object):
     def classify(self, data):
         classify_x, classify_y = data
         i = T.lscalar()
-        batches = 22
-        #print("data size: {0}".format(data_size))
+        batches = classify_x.shape.eval()[0]
 
         self.predictions = theano.function(
            [i],
@@ -214,16 +227,10 @@ class Network(object):
            givens={
                self.x:
                classify_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]})
-#               classify_x[i:-1]})
 
 
-#        predictions = [self.predictions(j) for j in xrange(batches)]
-        predictions = [self.predictions(0)]
-
-        print(predictions)
-        print(batches)
-        #out_printed = theano.printing.Print()(self.layers[-1].y_out)
-
+        predictions = [int(self.predictions(j)) for j in xrange(batches)]
+        return  predictions
 
     def save_params(self):
         params = [layer.__getstate__() for layer in self.layers]
@@ -236,6 +243,36 @@ class Network(object):
         params = cPickle.load(f)
         [layer.__setstate__(state) for layer,state in zip(self.layers, params)]
         f.close()
+
+    def plot_metrics(self, epoch,cost, train, val, test):
+        fig1 = plt.figure(figsize=(10,6))
+        fig1.set_facecolor([1,1,1])
+        ax1=fig1.add_subplot(211)
+        x = np.arange(0, epoch+1)
+        ax1.plot(x, cost, label="Mean Training Cost")
+        ax1.set_title("Mean Cost", fontsize=14, fontweight='bold')
+        ax1.set_ylabel("Mean Cost")
+        ax1.set_yscale('log')
+        box1 = ax1.get_position()
+        ax1.set_position([box1.x0, box1.y0 + box1.height * 0.2,
+                          box1.width, box1.height * 0.9])
+
+        ax2 = fig1.add_subplot(212)
+        ax2.plot(x, train, color='blue', alpha=0.8, label="Training Accuracy")
+        ax2.plot(x, val, color='green', alpha=0.8, label="Validation Accuracy")
+        ax2.plot(x, test, color='red', alpha=0.8, label="Test Accuracy")
+        ax2.set_title("Accuracy", fontsize=14, fontweight='bold')
+        ax2.set_xlabel("Epoch")
+        ax2.set_ylabel("Accuracy")
+        box2 = ax2.get_position()
+        ax2.set_position([box2.x0, box2.y0 + box2.height * 0.2,
+                          box2.width, box2.height * 0.9])
+        ax2.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25),
+                   fancybox=True, shadow=True, ncol=3)
+
+        fig1.savefig(self.figfile, dpi=300, facecolor=fig1.get_facecolor(),
+                     edgecolor='w', orientation='landscape',
+                     bbox_inches=None, pad_inches=0.1)
 
 
 #### Define layer types

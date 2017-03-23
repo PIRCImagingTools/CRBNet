@@ -76,12 +76,13 @@ class build_network(object):
             self.network = json.load(net_data)
 
         if classify:
-            self.minibatch_size = 22
+            self.minibatch_size = 1
         else:
-            self.minibatch_size = self.network['minibatch_size']
+            self.minibatch_size = self.network['mini_batch_size']
         self.layers = [self.build_init(self.network['input_dims'])]
         self.layers_construct = []
         self.logfile =  os.path.dirname(network_file)+'/accuracy.csv'
+        self.figfile=  os.path.dirname(network_file)+'/metrics.png'
         self.predictions = os.path.dirname(network_file)+'/predictions.csv'
         self.params_file = os.path.dirname(network_file)+'/params.save'
         self.restart = self.network['restart']
@@ -175,6 +176,7 @@ class build_network(object):
                          self.minibatch_size,
                          params_file = self.params_file,
                          logfile=self.logfile,
+                         figfile=self.figfile,
                          restart=self.restart)
         net.SGD(self.training_data, self.network['epochs'],
                 self.minibatch_size, self.network['eta'],
@@ -187,7 +189,8 @@ class build_network(object):
                          logfile=self.predictions,
                          restart=True)
 
-        net.classify(data)
+        predictions = net.classify(data)
+        return predictions
 
 
 
