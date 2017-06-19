@@ -5,14 +5,14 @@ import csv
 
 user=getpass.getuser()
 template_stack = os.path.abspath("./res/template_T2.nii.gz")
-CRB_BRAIN = os.path.abspath("./res/CRB_BRAIN_Template.nii.gz")
-CRB_TEMPLATE = os.path.abspath("./res/CRB_Template.nii.gz")
+BRAIN_TEMPLATE = os.path.abspath("./res/BRAIN_Template.nii.gz")
+HP_TEMPLATE = os.path.abspath("./res/HP_Template.nii.gz")
 
-RCRB=18 #higher value
-LCRB=17 #lower value
+RHP=2 #higher value
+LHP=1 #lower value
 
 
-class CRB_PREP(object):
+class HP_PREP(object):
 
     def __init__(self, parent_dir, orig_brain, man_seg, PCA, STACK):
         self.parent_dir = parent_dir
@@ -26,12 +26,12 @@ class CRB_PREP(object):
     def reg_brain(self):
 
         if self.PCA >= 44:
-            self.outmatrix_crb = os.path.join(self.parent_dir,'reg_to_CRB_template.mat')
+            self.outmatrix_crb = os.path.join(self.parent_dir,'reg_to_BRAIN_template.mat')
             flt = fsl.FLIRT()
             flt.inputs.in_file =  self.orig_brain
-            flt.inputs.reference = CRB_BRAIN
+            flt.inputs.reference = BRAIN_TEMPLATE
             flt.inputs.out_matrix_file = self.outmatrix_crb
-            flt.inputs.out_file = os.path.join(self.parent_dir,'reg_to_CRB_template.nii.gz')
+            flt.inputs.out_file = os.path.join(self.parent_dir,'reg_to_BRAIN_template.nii.gz')
             print(flt.cmdline)
             flt.run()
 
@@ -43,7 +43,7 @@ class CRB_PREP(object):
             app.inputs.apply_xfm = True
             app.inputs.in_matrix_file =  self.outmatrix_crb
             app.inputs.interp = 'nearestneighbour'
-            app.inputs.out_file = os.path.join(self.parent_dir ,'manual_seg_reg_to_CRB_template.nii.gz')
+            app.inputs.out_file = os.path.join(self.parent_dir ,'manual_seg_reg_to_BRAIN_template.nii.gz')
             print(app.cmdline)
             app.run()
 
@@ -73,12 +73,12 @@ class CRB_PREP(object):
 
             #REG PCA REG TO OLDEST
 
-            self.outmatrix_CRB = os.path.join(self.parent_dir,'reg_to_CRB_template.mat')
+            self.outmatrix_CRB = os.path.join(self.parent_dir,'reg_to_BRAIN_template.mat')
             flt_crb = fsl.FLIRT()
             flt_crb.inputs.in_file =  os.path.join(self.parent_dir,'reg_to_PCA_template.nii.gz')
-            flt_crb.inputs.reference =  CRB_BRAIN
+            flt_crb.inputs.reference =  BRAIN_TEMPLATE
             flt_crb.inputs.out_matrix_file = self.outmatrix_CRB
-            flt_crb.inputs.out_file = os.path.join(self.parent_dir, 'reg_to_CRB_template.nii.gz')
+            flt_crb.inputs.out_file = os.path.join(self.parent_dir, 'reg_to_BRAIN_template.nii.gz')
             print(flt_crb.cmdline)
             flt_crb.run()
 
@@ -86,11 +86,11 @@ class CRB_PREP(object):
 
             app_crb = fsl.FLIRT()
             app_crb.inputs.in_file = os.path.join(self.parent_dir, 'manual_seg_reg_to_PCA_template.nii.gz')
-            app_crb.inputs.reference = CRB_BRAIN
+            app_crb.inputs.reference = BRAIN_TEMPLATE
             app_crb.inputs.apply_xfm = True
             app_crb.inputs.in_matrix_file =  self.outmatrix_CRB
             app_crb.inputs.interp = 'nearestneighbour'
-            app_crb.inputs.out_file = os.path.join(self.parent_dir, 'manual_seg_reg_to_CRB_template.nii.gz')
+            app_crb.inputs.out_file = os.path.join(self.parent_dir, 'manual_seg_reg_to_BRAIN_template.nii.gz')
             print(app_crb.cmdline)
             app_crb.run()
 
@@ -113,35 +113,48 @@ class CRB_PREP(object):
         return os.path.join(self.parent_dir,'pca_template.nii.gz')
 
 
-    def reg_crb(self):
+    def reg_hp(self):
 
-        get_crb = fsl.ImageMaths()
-        get_crb.inputs.op_string = '-thr {0:.1f} -uthr {1:.1f}'.format(LCRB-0.5,RCRB+0.5)
-        get_crb.inputs.in_file = os.path.join(self.parent_dir , 'manual_seg_reg_to_CRB_template.nii.gz')
-        get_crb.inputs.out_file = os.path.join(self.parent_dir , 'extracted_CRB.nii.gz')
-        print(get_crb.cmdline)
-        get_crb.run()
+        get_hp = fsl.ImageMaths()
+        get_hp.inputs.op_string = '-thr {0:.1f} -uthr {1:.1f}'.format(LHP-0.5,RHP+0.5)
+        get_hp.inputs.in_file = os.path.join(self.parent_dir , 'manual_seg_reg_to_BRAIN_template.nii.gz')
+        get_hp.inputs.out_file = os.path.join(self.parent_dir , 'extracted_HP.nii.gz')
+        print(get_hp.cmdline)
+        get_hp.run()
 
 
-        flt_crb = fsl.FLIRT()
-        flt_crb.inputs.in_file =  os.path.join(self.parent_dir , 'extracted_CRB.nii.gz')
-        flt_crb.inputs.reference =  CRB_TEMPLATE
-        flt_crb.inputs.out_file = os.path.join(self.parent_dir , 'registered_extracted_CRB.nii.gz')
-        print(flt_crb.cmdline)
-        flt_crb.run()
+#        flt_crb = fsl.FLIRT()
+#        flt_crb.inputs.in_file =  os.path.join(self.parent_dir , 'extracted_HP.nii.gz')
+#        flt_crb.inputs.reference =  HP_TEMPLATE
+#        flt_crb.inputs.out_file = os.path.join(self.parent_dir , 'registered_extracted_HP.nii.gz')
+#        print(flt_crb.cmdline)
+#        flt_crb.run()
 
     def add_to_stack(self):
+        """First round use BRAIN_TEMPLATE as initial stack,
+        then if necessary, average that stack and create a template """
+
         if os.path.isfile(self.stack):
             stack = self.stack
         else:
-            stack = CRB_TEMPLATE
+            stack = BRAIN_TEMPLATE
         merger = fsl.Merge()
         merger.inputs.in_files = [stack,
-                                  os.path.join(self.parent_dir , 'registered_extracted_CRB.nii.gz')]
+                                  os.path.join(self.parent_dir , 'extracted_HP.nii.gz')]
         merger.inputs.dimension = 't'
         merger.inputs.merged_file = self.stack
         print(merger.cmdline)
         merger.run()
+
+    def crop(self, cropped_image):
+        cropper = fsl.ExtractROI()
+        cropper.inputs.in_file = self.stack
+        cropper.inputs.t_min = 1
+        cropper.inputs.t_size = -1
+        cropper.inputs.roi_file = cropped_image
+        print(cropper.cmdline)
+        cropper.run()
+
 
     def bin_crop(self, final_image, xmin, xsize,
                                     ymin, ysize,
@@ -172,12 +185,12 @@ class CRB_PREP(object):
 
 if __name__ == '__main__':
 
-    in_file = '/home/pirc/PIRC1-Storage/processing/Neonatal_Segmentation/CRB_BDS_GOOD_20170324.csv'
-    STACK = '/home/pirc/PIRC1-Storage/processing/Neonatal_Segmentation/Stacked_CRB_20170324.nii.gz'
-    FINAL = '/home/pirc/PIRC1-Storage/processing/Neonatal_Segmentation/Stacked_CRB_CROP_BIN_20170324.nii.gz'
+    in_file = '/home/pirc/PIRC1-Storage/processing/Neonatal_Segmentation/CHP_HP_BDS_GOOD_20170428.csv'
+    STACK = '/home/pirc/PIRC1-Storage/processing/Neonatal_Segmentation/CHP_Stacked_HP_20170501.nii.gz'
+    FINAL = '/home/pirc/PIRC1-Storage/processing/Neonatal_Segmentation/CHP_Stacked_HP_CROP_BIN_20170501.nii.gz'
 ##### IN CASE YOU ARE CREATING IT FROM SCRATCH:
-#    if os.path.isfile(STACK):
-#        os.remove(STACK)
+    if os.path.isfile(STACK):
+        os.remove(STACK)
 
     with open(in_file, 'rb') as csvfile:
         reader = csv.DictReader(csvfile, delimiter=',')
@@ -187,11 +200,12 @@ if __name__ == '__main__':
             orig_brain = row['T2']
             man_seg = row['Segmentation']
             PCA = row['PCA']
-            SCORE = row['CRB_DYSP']
-            prep = CRB_PREP(parent_dir, orig_brain, man_seg, PCA, STACK)
+            SCORE = row['HP_DYSP']
+            prep = HP_PREP(parent_dir, orig_brain, man_seg, PCA, STACK)
 #            prep.reg_brain()
-#            prep.reg_crb()
-#            prep.add_to_stack()
-        prep.bin_crop(FINAL, 9, 100, 0, 90, 0, 70, 1, -1)
+#            prep.reg_hp()
+            prep.add_to_stack()
+        prep.crop(STACK)
+        prep.bin_crop(FINAL, 0, 100, 30, 90, 15, 70, 0, -1)
 
 

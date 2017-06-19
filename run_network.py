@@ -109,7 +109,9 @@ class build_network(object):
 
     def build_init(self, layer):
         out_shape = np.asarray(self.network['input_dims'])
-        return {'out_dims' : out_shape}
+        return {'construct' : "INIT",
+                'out_dims' : out_shape,
+                'params' : 0}
 
 
 
@@ -131,7 +133,9 @@ class build_network(object):
         out_dims = np.append(feature_maps, out_shape)
 
         layer = {'construct':construct,
-                     'out_dims' : out_dims,}
+                 'out_dims' : out_dims,
+                 'params' : tuple([param for sublist in filter_shape for param in sublist])
+                 }
         return layer
 
 
@@ -148,7 +152,8 @@ class build_network(object):
         )
 
         layer = {'construct' : construct,
-                 'out_dims' : out_shape,}
+                 'out_dims' : out_shape,
+                 'params' : in_shape * out_shape}
         return layer
 
     def build_soft(self, layer):
@@ -163,7 +168,8 @@ class build_network(object):
         )
 
         layer = {'construct' : construct,
-                 'out_dims' : out_shape,}
+                 'out_dims' : out_shape,
+                 'params' : in_shape * out_shape}
         return layer
 
     def run(self):
@@ -180,7 +186,11 @@ class build_network(object):
                          restart=self.restart)
         net.SGD(self.training_data, self.network['epochs'],
                 self.minibatch_size, self.network['eta'],
-                self.validation_data, self.test_data, self.network['lmbda'])
+		self.network['eta_decay'], self.network['eta_interval'],
+                self.validation_data, self.test_data,
+                self.network['lmbda'],
+                self.network['descent_method'],
+                self.network['mu'])
 
     def classify(self, data):
         net = nn.Network(self.layers_construct,
@@ -192,6 +202,24 @@ class build_network(object):
         predictions = net.classify(data)
         return predictions
 
+    def analyze(self):
+        memory = 0
+        compute = 0
+        for layer in self.layers:
+            print(layer['construct'])
+            print("Memory Footprint:")
+            print(layer['out_dims'])
+            layer_memory = np.product(layer['out_dims'])
+            print(layer_memory)
+            memory += layer_memory
+            print("Compute Footprint:")
+            print(layer['params'])
+            layer_compute = np.product(layer['params'])
+            print(layer_compute)
+            compute += layer_compute
+
+        print("Memory Footprint: {0}".format(memory))
+        print("Compute Footprint: {0}".format(compute))
 
 
 if __name__ == '__main__':
