@@ -38,10 +38,10 @@ def load_data(stack, labels):
 
 
 if __name__ == '__main__':
-    params_file = './Run_23/params.save'
-    network_file = './Run_23/network.json'
-    stack_file = './res/synth_data_val_1v1d.nii.gz'
-    labels_file = './res/synth_labels_val_1v1d.txt'
+    params_file = './Run_16-C/params.save'
+    network_file = './Run_16-C/network.json'
+    stack_file = './res/Inflated_Train_20170331.nii.gz'
+    labels_file = './res/Inflated_Train_20170331_Labels.txt'
 
     params = load_params(params_file)
     data = load_data(stack_file, labels_file)

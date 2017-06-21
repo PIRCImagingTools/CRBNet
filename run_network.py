@@ -84,6 +84,7 @@ class build_network(object):
         self.logfile =  os.path.dirname(network_file)+'/accuracy.csv'
         self.figfile=  os.path.dirname(network_file)+'/metrics.png'
         self.predictions = os.path.dirname(network_file)+'/predictions.csv'
+        self.activations = os.path.dirname(network_file)+'/activations.save'
         self.params_file = os.path.dirname(network_file)+'/params.save'
         self.restart = self.network['restart']
 
@@ -197,6 +198,7 @@ class build_network(object):
                          self.minibatch_size,
                          params_file = self.params_file,
                          logfile=self.predictions,
+                         activation_file=self.activations,
                          restart=True)
 
         predictions = net.classify(data)

@@ -70,7 +70,8 @@ import matplotlib.pyplot as plt
 #### Main class used to construct and train networks
 class Network(object):
 
-    def __init__(self, layers, mini_batch_size, params_file, logfile, figfile="", restart=False):
+    def __init__(self, layers, mini_batch_size, params_file, logfile,
+                 figfile="", activation_file="", restart=False):
         """Takes a list of `layers`, describing the network architecture, and
         a value for the `mini_batch_size` to be used during training
         by stochastic gradient descent.
@@ -96,6 +97,7 @@ class Network(object):
         self.output_dropout = self.layers[-1].output_dropout
         self.logout = open(logfile, 'a')
         self.figfile = figfile
+        self.activation_file = activation_file
 
     def SGD(self, training_data, epochs, mini_batch_size, eta, eta_decay, eta_interval,
             validation_data, test_data, lmbda=0.0, descent_method='SGD', mu=0.0):
@@ -243,6 +245,8 @@ class Network(object):
     def classify(self, data):
         classify_x, classify_y = data
         i = T.lscalar()
+        j = T.iscalar()
+
         batches = classify_x.shape.eval()[0]
 
         self.predictions = theano.function(
@@ -252,8 +256,15 @@ class Network(object):
                self.x:
                classify_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]})
 
+        self.activations = [ theano.function(
+           [i], self.layers[j].activation,
+           givens={
+               self.x:
+               classify_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]}) for j in xrange(len(self.layers))]
 
         predictions = [int(self.predictions(j)) for j in xrange(batches)]
+        activations = [[self.activations[j](i)for i in xrange(batches)] for j in xrange(len(self.activations))]
+        self.save_activations(activations)
         return  predictions
 
     def save_params(self):
@@ -266,6 +277,11 @@ class Network(object):
         f = open(self.params_file, 'rb')
         params = cPickle.load(f)
         [layer.__setstate__(state) for layer,state in zip(self.layers, params)]
+        f.close()
+
+    def save_activations(self, activations):
+        f = open(self.activation_file, 'wb')
+        cPickle.dump(activations, f, protocol=cPickle.HIGHEST_PROTOCOL)
         f.close()
 
     def plot_metrics(self, epoch,cost, train, val, test):
@@ -405,11 +421,11 @@ class ConvPoolLayer(object):
             filters_shape = [self.filter_shape[idx] for idx in [0,4,1,3,2]],
             signals_shape = [self.image_shape[idx] for idx in [0,4,1,3,2]])
         conv_out = conv_out.dimshuffle(0, 2, 4, 3, 1)
-        pooled_out = pool.max_pool_3d(
+        self.pooled_out = pool.max_pool_3d(
             input=conv_out, ds=self.poolsize, ignore_border=True)
-        self.output = self.activation_fn(
-            pooled_out + self.b.dimshuffle('x', 0, 'x', 'x', 'x')) ##dimshuffle broadcasts the bias vector
+        self.activation = self.pooled_out + self.b.dimshuffle('x', 0, 'x', 'x', 'x')##dimshuffle broadcasts the bias vector
                                                               ## across the 3D tensor dimvs
+        self.output = self.activation_fn(self.activation)
         self.output_dropout = self.output # no dropout in the convolutional layers
 
 
@@ -494,8 +510,9 @@ class FullyConnectedLayer(object):
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
 
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
-        self.output = self.activation_fn(
-            (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b) #weigh activation by dropout rate
+
+        self.activation = (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b #weigh activation by dropout rate
+        self.output = self.activation_fn(self.activation)
         self.y_out = T.argmax(self.output, axis=1)
 
         #We use inpt_droput during training, whether we want the option or not.
@@ -551,7 +568,8 @@ class SoftmaxLayer(object):
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
-        self.output = softmax((1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
+        self.activation = (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b
+        self.output = softmax(self.activation)
         self.y_out = T.argmax(self.output, axis=1)
         self.inpt_dropout = dropout_layer(
             inpt_dropout.reshape((mini_batch_size, self.n_in)), self.p_dropout)
@@ -582,6 +600,7 @@ class SoftmaxLayer(object):
         self.w = W
         self.b = b
         self.params = [self.w, self.b]
+
 
 
 #### Miscellanea

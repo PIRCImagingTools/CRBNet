@@ -1,7 +1,7 @@
 import cPickle
 import numpy as np
 import matplotlib.pyplot as plt
-import os
+import os,sys
 
 def load_parameters(params_file):
     params_list = []
@@ -42,12 +42,12 @@ def plot_parameters(params, figfile):
 
 
 if __name__ == '__main__':
-    params_file = './CRB_X_VAL/Run_0/params.save'
-    fig_out_dir = './CRB_X_VAL/Run_0/'
+    main_dir = os.path.abspath(sys.argv[1])
 
+    params_file = os.path.join(main_dir, 'params.save')
     params = load_parameters(params_file)
     for x in xrange(len(params)):
-        figfile = os.path.join(fig_out_dir, 'layer_{0}_weights.png'.format(x))
+        figfile = os.path.join(main_dir, 'layer_{0}_weights.png'.format(x))
         plot_parameters(params[x], figfile)
 
 
