@@ -38,10 +38,10 @@ def load_data(stack, labels):
 
 
 if __name__ == '__main__':
-    params_file = './Run_16-C/params.save'
-    network_file = './Run_16-C/network.json'
-    stack_file = './res/Stacked_CRB_CROP_BIN_Test_20170324.nii.gz'
-    labels_file = './res/CRB_Labels_Test_20170324.txt'
+    params_file = './Run/params.save'
+    network_file = './Run/network.json'
+    stack_file = './res/dataset.nii.gz'
+    labels_file = './res/labels.txt'
 
     params = load_params(params_file)
     data = load_data(stack_file, labels_file)
