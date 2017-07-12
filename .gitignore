@@ -5,3 +5,7 @@ res/
 previous
 err.log
 full_size
+*.csv
+CRB_X_VAL
+Figures
+General_Metrics

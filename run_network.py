@@ -198,11 +198,20 @@ class build_network(object):
                          self.minibatch_size,
                          params_file = self.params_file,
                          logfile=self.predictions,
-                         activation_file=self.activations,
                          restart=True)
 
         predictions = net.classify(data)
         return predictions
+
+    def calc_activations(self, data):
+        net = nn.Network(self.layers_construct,
+                         self.minibatch_size,
+                         params_file = self.params_file,
+                         logfile=self.predictions,
+                         activation_file=self.activations,
+                         restart=True)
+
+        activations = net.calc_activations(data)
 
     def analyze(self):
         memory = 0

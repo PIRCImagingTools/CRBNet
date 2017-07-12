@@ -46,7 +46,6 @@ if __name__ == '__main__':
     params = load_params(params_file)
     data = load_data(stack_file, labels_file)
     net = build_network(network_file, classify=True)
-    classifications = net.classify(data)
-    print(classifications)
+    net.calc_activations(data)
 
 

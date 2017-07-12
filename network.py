@@ -245,9 +245,10 @@ class Network(object):
     def classify(self, data):
         classify_x, classify_y = data
         i = T.lscalar()
-        j = T.iscalar()
 
         batches = classify_x.shape.eval()[0]
+
+        return_y = self.y
 
         self.predictions = theano.function(
            [i],
@@ -256,16 +257,40 @@ class Network(object):
                self.x:
                classify_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]})
 
-        self.activations = [ theano.function(
+        get_classification = theano.function(
+            [i], return_y,
+            givens={
+                self.y:
+                classify_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]}
+        )
+
+        predictions = [int(self.predictions(j)) for j in xrange(batches)]
+        actual = [int(get_classification(i)) for i in xrange(batches)]
+
+        self.logout.write("Subject,Predicted, Actual,\n")
+        for x in xrange(len(predictions)):
+            self.logout.write('{0},{1},{2}\n'.format(x,predictions[x], actual[x],'\n'))
+
+        self.logout.close()
+        return  predictions
+
+    def calc_activations(self, data):
+        classify_x, classify_y = data
+        i = T.lscalar()
+        j = T.iscalar()
+
+        batches = classify_x.shape.eval()[0]
+
+        activation_functions = [ theano.function(
            [i], self.layers[j].activation,
            givens={
                self.x:
-               classify_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]}) for j in xrange(len(self.layers))]
+               classify_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]})
+                            for j in xrange(len(self.layers))]
 
-        predictions = [int(self.predictions(j)) for j in xrange(batches)]
-        activations = [[self.activations[j](i)for i in xrange(batches)] for j in xrange(len(self.activations))]
-        self.save_activations(activations)
-        return  predictions
+        layer_activations = [[activation_functions[j](i)for i in xrange(batches)]
+                             for j in xrange(len(activation_functions))]
+        self.save_activations(layer_activations)
 
     def save_params(self):
         params = [layer.__getstate__() for layer in self.layers]
@@ -279,9 +304,9 @@ class Network(object):
         [layer.__setstate__(state) for layer,state in zip(self.layers, params)]
         f.close()
 
-    def save_activations(self, activations):
+    def save_activations(self, layer_activations):
         f = open(self.activation_file, 'wb')
-        cPickle.dump(activations, f, protocol=cPickle.HIGHEST_PROTOCOL)
+        cPickle.dump(layer_activations, f, protocol=cPickle.HIGHEST_PROTOCOL)
         f.close()
 
     def plot_metrics(self, epoch,cost, train, val, test):
@@ -329,7 +354,7 @@ class ConvPoolLayer(object):
     def __init__(self, filter_shape, image_shape, poolsize=(2, 2, 2),
                  activation_fn="Sigmoid"):
         """`filter_shape` is a tuple of length 4, whose entries are the number
-    [MaI    of filters, the number of input feature maps, the filter height, and the
+        of filters, the number of input feature maps, the filter height, and the
         filter width.
 
         NUMBER OF FILTERS: how many new feature maps

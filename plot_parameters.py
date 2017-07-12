@@ -19,7 +19,7 @@ def plot_parameters(params, figfile):
     shape = params.shape
     filters = shape[0] #10
     image_size = shape[2:] #[4,4,4]
-    slices = shape[2]
+    slices = shape[4]
 
     fig = plt.figure(figsize=(filters*3, slices*3))
     fig.set_facecolor([1,1,1])
@@ -28,10 +28,10 @@ def plot_parameters(params, figfile):
 
     for j in xrange(slices):
         for i in xrange(filters):
-            image_slice = params[i,0,j,:,:].squeeze()
+            image_slice = params[i,0,:,:,j].squeeze()
             ax = fig.add_subplot(slices, filters, k)
             ax.set_title('Filter: {0}, Slice: {1}'.format(i,j))
-            plt.imshow(image_slice, cmap=plt.cm.gray, interpolation='none')
+            plt.imshow(image_slice, cmap=plt.cm.gray, clim=(-1.0,1.0), interpolation='none')
             plt.axis("off")
             k += 1
     fig.savefig(figfile, dpi=300, facecolor=fig.get_facecolor(),
@@ -47,7 +47,7 @@ if __name__ == '__main__':
     params_file = os.path.join(main_dir, 'params.save')
     params = load_parameters(params_file)
     for x in xrange(len(params)):
-        figfile = os.path.join(main_dir, 'layer_{0}_weights.png'.format(x))
+        figfile = os.path.join(main_dir, 'layer_{0}_weights_norm.png'.format(x))
         plot_parameters(params[x], figfile)
 
 
