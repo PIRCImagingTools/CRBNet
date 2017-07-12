@@ -42,8 +42,9 @@ from theano.tensor.nnet.conv3d2d import conv3d
 from theano.tensor.nnet import softmax
 from theano.tensor import shared_randomstreams
 import pool_ext as pool
-from nipy import load_image #, save_image
-import cPickle
+import cPickle,time
+import matplotlib.pyplot as plt
+
 
 
 
@@ -65,51 +66,12 @@ import cPickle
 #theano.config.exception_verbosity='high'
 #theano.config.traceback.limit = 32
 
-#### Load the data
-
-def load_data_shared(TRAIN_STACK, TRAIN_LABELS,
-                     VALID_STACK, VALID_LABELS,
-                     TEST_STACK, TEST_LABELS):
-
-    def get_nii_data(nifti_file):
-        image = load_image(nifti_file)
-        data = image.get_data().transpose(3, 0, 1, 2)
-        print "data shape:"
-        print data.shape
-        return data
-
-    def get_text_data(text_file):
-        vector = []
-        with open(text_file) as f:
-            for line in f:
-                vector.append(line.rstrip())
-        return np.asarray(vector)
-
-
-    def shared(DATA, LABELS):
-        """Place the data into shared variables.  This allows Theano to copy
-        the data to the GPU, if one is available.
-        Shuffles index first to hopefully improve mini batch learning
-
-        """
-        idx = np.arange(len(DATA))
-        np.random.shuffle(idx)
-
-        shared_x = theano.shared(
-            np.asarray(DATA[idx], dtype=theano.config.floatX), borrow=True)
-        shared_y = theano.shared(
-            np.asarray(LABELS[idx], dtype=theano.config.floatX), borrow=True)
-        return shared_x, T.cast(shared_y, "int32")
-
-    return [shared(get_nii_data(TRAIN_STACK),get_text_data(TRAIN_LABELS)),
-            shared(get_nii_data(VALID_STACK), get_text_data(VALID_LABELS)),
-            shared(get_nii_data(TEST_STACK), get_text_data(TEST_LABELS))
-            ]
 
 #### Main class used to construct and train networks
 class Network(object):
 
-    def __init__(self, layers, mini_batch_size, params_file, logfile, restart=False):
+    def __init__(self, layers, mini_batch_size, params_file, logfile,
+                 figfile="", activation_file="", restart=False):
         """Takes a list of `layers`, describing the network architecture, and
         a value for the `mini_batch_size` to be used during training
         by stochastic gradient descent.
@@ -122,6 +84,7 @@ class Network(object):
             print("Loading existing parameters")
             self.load_params()
         self.params = [param for layer in self.layers for param in layer.params]
+        self.vs = [v for layer in self.layers for v in layer.v]
         self.x = T.tensor4("x")
         self.y = T.ivector("y")
         init_layer = self.layers[0]
@@ -133,15 +96,19 @@ class Network(object):
         self.output = self.layers[-1].output
         self.output_dropout = self.layers[-1].output_dropout
         self.logout = open(logfile, 'a')
-        self.logout.write('Epoch,Training_Error,Validation_Error,Test_Error,Mean_Epoch_Cost\n')
+        self.figfile = figfile
+        self.activation_file = activation_file
 
-
-    def SGD(self, training_data, epochs, mini_batch_size, eta,
-            validation_data, test_data, lmbda=0.0):
+    def SGD(self, training_data, epochs, mini_batch_size, eta, eta_decay, eta_interval,
+            validation_data, test_data, lmbda=0.0, descent_method='SGD', mu=0.0):
         """Train the network using mini-batch stochastic gradient descent."""
         training_x, training_y = training_data
         validation_x, validation_y = validation_data
         test_x, test_y = test_data
+        self.eta = eta
+        self.mu = mu
+
+        self.logout.write('Epoch,Training_Error,Validation_Error,Test_Error,Mean_Epoch_Cost\n')
 
         # compute number of minibatches for training, validation and testing
         num_training_batches = size(training_data)/mini_batch_size
@@ -153,8 +120,17 @@ class Network(object):
         cost = self.layers[-1].cost(self)+\
                0.5*lmbda*l2_norm_squared/num_training_batches
         grads = T.grad(cost, self.params)
-        updates = [(param, param-eta*grad)
+
+        if descent_method == 'momentum':
+            updates = [(v, self.mu * v - self.eta*grad)
+                       for v, grad in zip(self.vs, grads)]
+            updates.extend((param, param + v)
+                   for param, v in zip(self.params, self.vs))
+        else:
+            """Regular SGD"""
+            updates = [(param, param-self.eta*grad)
                    for param, grad in zip(self.params, grads)]
+
 
         # define functions to train a mini-batch, and to compute the
         # accuracy in validation and test mini-batches.
@@ -200,7 +176,17 @@ class Network(object):
             })
         # Do the actual training
         best_validation_accuracy = 0.0
+        mean_cost = []
+        train_accuracy_list = []
+        val_accuracy_list = []
+        test_accuracy_list = []
+
         for epoch in xrange(epochs):
+            if (epoch + 1) % eta_interval == 0:
+                self.eta = self.eta * eta_decay
+            if epoch == 50:
+                self.mu = 0.9
+            epoch_start = time.time()
             for minibatch_index in xrange(num_training_batches):
                 iteration = num_training_batches*epoch+minibatch_index
                 if iteration % 1000 == 0:
@@ -209,11 +195,15 @@ class Network(object):
                 if (iteration+1) % num_training_batches == 0:
                     epoch_cost = np.mean(
                         [train_mb(j) for j in xrange(num_test_batches)])
+                    mean_cost.append(epoch_cost)
                     validation_accuracy = np.mean(
                         [validate_mb_accuracy(j) for j in xrange(num_validation_batches)])
+                    val_accuracy_list.append(validation_accuracy)
                     training_accuracy = np.mean(
                                 [training_mb_accuracy(j) for j in xrange(num_training_batches)])
+                    train_accuracy_list.append(training_accuracy)
                     print("\nEpoch {0}\n".format(epoch)+\
+                          "eta: {0:.3}\n".format(self.eta)+\
                           "training accuracy: {0:.2%}\n".format(training_accuracy)+\
                           "validation accuracy: {0:.2%}\n".format(validation_accuracy)+\
                           "Mean epoch cost: {0:.3}\n".format(epoch_cost))
@@ -223,12 +213,19 @@ class Network(object):
                         best_validation_accuracy = validation_accuracy
                         best_iteration = iteration
                         self.save_params()
-                        if test_data:
-                            test_accuracy = np.mean(
-                                [test_mb_accuracy(j) for j in xrange(num_test_batches)])
+                    if test_data:
+                        test_accuracy = np.mean(
+                            [test_mb_accuracy(j) for j in xrange(num_test_batches)])
+                        test_accuracy_list.append(test_accuracy)
 
-                            print('The corresponding test accuracy is {0:.2%}'.format(
-                                test_accuracy))
+                        print('The corresponding test accuracy is {0:.2%}'.format(
+                            test_accuracy))
+                    epoch_time = time.time() - epoch_start
+                    HOURS = epoch_time/3600
+                    MINUTES = (epoch_time%3600)/60
+                    SECONDS = (epoch_time%3600)%60
+                    print("Epoch duration:{0:3.0f} hours, {1:3.0f} minutes, {2:3.0f} seconds".format(
+                            HOURS,MINUTES,SECONDS))
                     self.logout.write('{0},{1},{2},{3},{4}\n'.format(
                                                                   epoch,
                                                                   training_accuracy,
@@ -236,12 +233,64 @@ class Network(object):
                                                                   test_accuracy,
                                                                   epoch_cost,'\n'))
                     self.logout.flush()
+                    self.plot_metrics(epoch,mean_cost, train_accuracy_list,
+                                      val_accuracy_list, test_accuracy_list)
 
         print("Finished training network.")
         self.logout.close()
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
+
+    def classify(self, data):
+        classify_x, classify_y = data
+        i = T.lscalar()
+
+        batches = classify_x.shape.eval()[0]
+
+        return_y = self.y
+
+        self.predictions = theano.function(
+           [i],
+           self.layers[-1].y_out,
+           givens={
+               self.x:
+               classify_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]})
+
+        get_classification = theano.function(
+            [i], return_y,
+            givens={
+                self.y:
+                classify_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]}
+        )
+
+        predictions = [int(self.predictions(j)) for j in xrange(batches)]
+        actual = [int(get_classification(i)) for i in xrange(batches)]
+
+        self.logout.write("Subject,Predicted, Actual,\n")
+        for x in xrange(len(predictions)):
+            self.logout.write('{0},{1},{2}\n'.format(x,predictions[x], actual[x],'\n'))
+
+        self.logout.close()
+        return  predictions
+
+    def calc_activations(self, data):
+        classify_x, classify_y = data
+        i = T.lscalar()
+        j = T.iscalar()
+
+        batches = classify_x.shape.eval()[0]
+
+        activation_functions = [ theano.function(
+           [i], self.layers[j].activation,
+           givens={
+               self.x:
+               classify_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]})
+                            for j in xrange(len(self.layers))]
+
+        layer_activations = [[activation_functions[j](i)for i in xrange(batches)]
+                             for j in xrange(len(activation_functions))]
+        self.save_activations(layer_activations)
 
     def save_params(self):
         params = [layer.__getstate__() for layer in self.layers]
@@ -254,6 +303,42 @@ class Network(object):
         params = cPickle.load(f)
         [layer.__setstate__(state) for layer,state in zip(self.layers, params)]
         f.close()
+
+    def save_activations(self, layer_activations):
+        f = open(self.activation_file, 'wb')
+        cPickle.dump(layer_activations, f, protocol=cPickle.HIGHEST_PROTOCOL)
+        f.close()
+
+    def plot_metrics(self, epoch,cost, train, val, test):
+        fig1 = plt.figure(figsize=(10,6))
+        fig1.set_facecolor([1,1,1])
+        ax1=fig1.add_subplot(211)
+        x = np.arange(0, epoch+1)
+        ax1.plot(x, cost, label="Mean Training Cost")
+        ax1.set_title("Mean Cost", fontsize=14, fontweight='bold')
+        ax1.set_ylabel("Mean Cost")
+        ax1.set_yscale('log')
+        box1 = ax1.get_position()
+        ax1.set_position([box1.x0, box1.y0 + box1.height * 0.2,
+                          box1.width, box1.height * 0.9])
+
+        ax2 = fig1.add_subplot(212)
+        ax2.plot(x, train, color='blue', alpha=0.8, label="Training Accuracy")
+        ax2.plot(x, val, color='green', alpha=0.8, label="Validation Accuracy")
+        ax2.plot(x, test, color='red', alpha=0.8, label="Test Accuracy")
+        ax2.set_title("Accuracy", fontsize=14, fontweight='bold')
+        ax2.set_xlabel("Epoch")
+        ax2.set_ylabel("Accuracy")
+        box2 = ax2.get_position()
+        ax2.set_position([box2.x0, box2.y0 + box2.height * 0.2,
+                          box2.width, box2.height * 0.9])
+        ax2.legend(loc='upper center', bbox_to_anchor=(0.5, -0.25),
+                   fancybox=True, shadow=True, ncol=3)
+
+        fig1.savefig(self.figfile, dpi=300, facecolor=fig1.get_facecolor(),
+                     edgecolor='w', orientation='landscape',
+                     bbox_inches=None, pad_inches=0.1)
+        plt.close()
 
 
 #### Define layer types
@@ -269,7 +354,7 @@ class ConvPoolLayer(object):
     def __init__(self, filter_shape, image_shape, poolsize=(2, 2, 2),
                  activation_fn="Sigmoid"):
         """`filter_shape` is a tuple of length 4, whose entries are the number
-    [MaI    of filters, the number of input feature maps, the filter height, and the
+        of filters, the number of input feature maps, the filter height, and the
         filter width.
 
         NUMBER OF FILTERS: how many new feature maps
@@ -290,6 +375,21 @@ class ConvPoolLayer(object):
         self.activation_fn = get_activation(activation_fn)
         # initialize weights and biases
         n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
+        n_in = np.prod(image_shape[1:])
+
+        #Momentum initialization
+        self.v_w = theano.shared(
+                np.zeros(filter_shape,
+                dtype=theano.config.floatX),
+            name="v_w",
+            borrow=True)
+        self.v_b = theano.shared(
+                np.zeros((filter_shape[0],),
+                dtype=theano.config.floatX),
+            name="v_b",
+            borrow=True)
+        self.v = [self.v_w, self.v_b]
+
 
         if activation_fn == "Sigmoid" or activation_fn == "Tanh":
             self.w = theano.shared(
@@ -305,6 +405,21 @@ class ConvPoolLayer(object):
                 name="conv_b",
                 borrow=True)
             self.params = [self.w, self.b]
+
+        elif activation_fn == "ReLU" or activation_fn == "lReLU":
+            self.w = theano.shared(
+                np.asarray(
+                    np.random.normal(loc=0, scale=np.sqrt(2.0/n_in), size=filter_shape),
+                    dtype=theano.config.floatX),
+                name="conv_w",
+                borrow=True)
+            self.b = theano.shared(
+                np.zeros((filter_shape[0],),
+                    dtype=theano.config.floatX)+0.01,
+                name="conv_b",
+                borrow=True)
+            self.params = [self.w, self.b]
+
         else:
             self.w = theano.shared(
                 np.asarray(
@@ -331,11 +446,11 @@ class ConvPoolLayer(object):
             filters_shape = [self.filter_shape[idx] for idx in [0,4,1,3,2]],
             signals_shape = [self.image_shape[idx] for idx in [0,4,1,3,2]])
         conv_out = conv_out.dimshuffle(0, 2, 4, 3, 1)
-        pooled_out = pool.max_pool_3d(
+        self.pooled_out = pool.max_pool_3d(
             input=conv_out, ds=self.poolsize, ignore_border=True)
-        self.output = self.activation_fn(
-            pooled_out + self.b.dimshuffle('x', 0, 'x', 'x', 'x')) ##dimshuffle broadcasts the bias vector
+        self.activation = self.pooled_out + self.b.dimshuffle('x', 0, 'x', 'x', 'x')##dimshuffle broadcasts the bias vector
                                                               ## across the 3D tensor dimvs
+        self.output = self.activation_fn(self.activation)
         self.output_dropout = self.output # no dropout in the convolutional layers
 
 
@@ -356,6 +471,20 @@ class FullyConnectedLayer(object):
         self.n_out = n_out
         self.activation_fn = get_activation(activation_fn)
         self.p_dropout = p_dropout
+
+        #Momentum initialization
+        self.v_w = theano.shared(
+                np.zeros((n_in, n_out),
+                dtype=theano.config.floatX),
+            name="v_w",
+            borrow=True)
+        self.v_b = theano.shared(
+                np.zeros((n_out,),
+                dtype=theano.config.floatX),
+            name="v_b",
+            borrow=True)
+        self.v = [self.v_w, self.v_b]
+
         # Initialize weights and biases
 
         # RANDOMLY INITIATED, optimized for sigmoid
@@ -374,6 +503,21 @@ class FullyConnectedLayer(object):
                 name='full_b',borrow=True)
 
             self.params = [self.w, self.b]
+
+        elif activation_fn == "ReLU" or activation_fn == "lReLU":
+            self.w = theano.shared(
+                np.asarray(
+                    np.random.normal(loc=0, scale=np.sqrt(2.0/n_in), size=(n_in,n_out)),
+                    dtype=theano.config.floatX),
+                name="conv_w",
+                borrow=True)
+            self.b = theano.shared(
+                np.zeros((n_out,),
+                    dtype=theano.config.floatX)+0.01,
+                name="conv_b",
+                borrow=True)
+            self.params = [self.w, self.b]
+
         else:
             self.w = theano.shared(
                 np.asarray(
@@ -391,8 +535,9 @@ class FullyConnectedLayer(object):
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
 
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
-        self.output = self.activation_fn(
-            (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b) #weigh activation by dropout rate
+
+        self.activation = (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b #weigh activation by dropout rate
+        self.output = self.activation_fn(self.activation)
         self.y_out = T.argmax(self.output, axis=1)
 
         #We use inpt_droput during training, whether we want the option or not.
@@ -423,6 +568,20 @@ class SoftmaxLayer(object):
         self.n_in = n_in
         self.n_out = n_out
         self.p_dropout = p_dropout
+
+        #Momentum initialization
+        self.v_w = theano.shared(
+                np.zeros((n_in, n_out),
+                dtype=theano.config.floatX),
+            name="v_w",
+            borrow=True)
+        self.v_b = theano.shared(
+                np.zeros((n_out,),
+                dtype=theano.config.floatX),
+            name="v_b",
+            borrow=True)
+        self.v = [self.v_w, self.v_b]
+
         # Initialize weights and biases
         self.w = theano.shared(
             np.zeros((n_in, n_out), dtype=theano.config.floatX),
@@ -434,7 +593,8 @@ class SoftmaxLayer(object):
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
         self.inpt = inpt.reshape((mini_batch_size, self.n_in))
-        self.output = softmax((1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b)
+        self.activation = (1-self.p_dropout)*T.dot(self.inpt, self.w) + self.b
+        self.output = softmax(self.activation)
         self.y_out = T.argmax(self.output, axis=1)
         self.inpt_dropout = dropout_layer(
             inpt_dropout.reshape((mini_batch_size, self.n_in)), self.p_dropout)
@@ -467,6 +627,7 @@ class SoftmaxLayer(object):
         self.params = [self.w, self.b]
 
 
+
 #### Miscellanea
 def size(data):
     "Return the size of the dataset `data`."
@@ -484,12 +645,15 @@ def dropout_layer(layer, p_dropout):
 # Activation functions for neurons
 def linear(z): return z
 def ReLU(z): return T.maximum(0.0, z)
+def lReLU(z): return T.maxium(0.01*z, z)
 from theano.tensor.nnet import sigmoid
 from theano.tensor import tanh
 
 def get_activation(function):
     if function == "ReLU":
         return ReLU
+    if function =="lReLU":
+        return lReLU
     elif function == "Linear":
         return linear
     elif function == "Sigmoid":

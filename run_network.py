@@ -23,16 +23,68 @@ import network as nn
 import time
 import numpy as np
 import sys,os
+from nipy import load_image
+import theano
+import theano.tensor as T
+
+
+def load_data_shared(TRAIN_STACK, TRAIN_LABELS,
+                     VALID_STACK, VALID_LABELS,
+                     TEST_STACK, TEST_LABELS):
+
+    def get_nii_data(nifti_file):
+        image = load_image(nifti_file)
+        data = image.get_data().transpose(3, 0, 1, 2)
+        print "data shape:"
+        print data.shape
+        return data
+
+    def get_text_data(text_file):
+        vector = []
+        with open(text_file) as f:
+            for line in f:
+                vector.append(line.rstrip())
+        return np.asarray(vector)
+
+
+    def shared(DATA, LABELS):
+        """Place the data into shared variables.  This allows Theano to copy
+        the data to the GPU, if one is available.
+        Shuffles index first to hopefully improve mini batch learning
+
+        """
+        idx = np.arange(len(DATA))
+        np.random.shuffle(idx)
+
+        shared_x = theano.shared(
+            np.asarray(DATA[idx], dtype=theano.config.floatX), borrow=True)
+        shared_y = theano.shared(
+            np.asarray(LABELS[idx], dtype=theano.config.floatX), borrow=True)
+        return shared_x, T.cast(shared_y, "int32")
+
+    return [shared(get_nii_data(TRAIN_STACK),get_text_data(TRAIN_LABELS)),
+            shared(get_nii_data(VALID_STACK), get_text_data(VALID_LABELS)),
+            shared(get_nii_data(TEST_STACK), get_text_data(TEST_LABELS))
+            ]
+
+
 
 class build_network(object):
-    def __init__(self, network_file):
+    def __init__(self, network_file, classify=False):
 
         with open(network_file) as net_data:
             self.network = json.load(net_data)
 
+        if classify:
+            self.minibatch_size = 1
+        else:
+            self.minibatch_size = self.network['mini_batch_size']
         self.layers = [self.build_init(self.network['input_dims'])]
         self.layers_construct = []
         self.logfile =  os.path.dirname(network_file)+'/accuracy.csv'
+        self.figfile=  os.path.dirname(network_file)+'/metrics.png'
+        self.predictions = os.path.dirname(network_file)+'/predictions.csv'
+        self.activations = os.path.dirname(network_file)+'/activations.save'
         self.params_file = os.path.dirname(network_file)+'/params.save'
         self.restart = self.network['restart']
 
@@ -53,16 +105,14 @@ class build_network(object):
             self.layers_construct.append(lout['construct'])
 
 
-        self.training_data, self.validation_data, self.test_data = nn.load_data_shared(
-            self.network['Data']['TRAIN_STACK'], self.network['Data']['TRAIN_LABELS'],
-            self.network['Data']['VALID_STACK'], self.network['Data']['VALID_LABELS'],
-            self.network['Data']['TEST_STACK'], self.network['Data']['TEST_LABELS'])
 
 
 
     def build_init(self, layer):
         out_shape = np.asarray(self.network['input_dims'])
-        return {'out_dims' : out_shape}
+        return {'construct' : "INIT",
+                'out_dims' : out_shape,
+                'params' : 0}
 
 
 
@@ -70,7 +120,7 @@ class build_network(object):
 
         in_shape = self.layers[-1]['out_dims']
         feature_maps = np.asarray(layer['feature_maps'])
-        image_shape=[[self.network['mini_batch_size']], in_shape.tolist()]
+        image_shape=[[self.minibatch_size], in_shape.tolist()]
         filter_shape=([feature_maps.tolist()], [in_shape[0]], layer['lrf'])
 
         construct = nn.ConvPoolLayer(
@@ -84,7 +134,9 @@ class build_network(object):
         out_dims = np.append(feature_maps, out_shape)
 
         layer = {'construct':construct,
-                     'out_dims' : out_dims,}
+                 'out_dims' : out_dims,
+                 'params' : tuple([param for sublist in filter_shape for param in sublist])
+                 }
         return layer
 
 
@@ -101,7 +153,8 @@ class build_network(object):
         )
 
         layer = {'construct' : construct,
-                 'out_dims' : out_shape,}
+                 'out_dims' : out_shape,
+                 'params' : in_shape * out_shape}
         return layer
 
     def build_soft(self, layer):
@@ -116,21 +169,68 @@ class build_network(object):
         )
 
         layer = {'construct' : construct,
-                 'out_dims' : out_shape,}
+                 'out_dims' : out_shape,
+                 'params' : in_shape * out_shape}
         return layer
 
     def run(self):
-#        print(self.layers_construct)
+        self.training_data, self.validation_data, self.test_data = load_data_shared(
+            self.network['Data']['TRAIN_STACK'], self.network['Data']['TRAIN_LABELS'],
+            self.network['Data']['VALID_STACK'], self.network['Data']['VALID_LABELS'],
+            self.network['Data']['TEST_STACK'], self.network['Data']['TEST_LABELS'])
 
         net = nn.Network(self.layers_construct,
-                         self.network['mini_batch_size'],
+                         self.minibatch_size,
                          params_file = self.params_file,
                          logfile=self.logfile,
+                         figfile=self.figfile,
                          restart=self.restart)
         net.SGD(self.training_data, self.network['epochs'],
-                self.network['mini_batch_size'], self.network['eta'],
-                self.validation_data, self.test_data, self.network['lmbda'])
+                self.minibatch_size, self.network['eta'],
+		self.network['eta_decay'], self.network['eta_interval'],
+                self.validation_data, self.test_data,
+                self.network['lmbda'],
+                self.network['descent_method'],
+                self.network['mu'])
 
+    def classify(self, data):
+        net = nn.Network(self.layers_construct,
+                         self.minibatch_size,
+                         params_file = self.params_file,
+                         logfile=self.predictions,
+                         restart=True)
+
+        predictions = net.classify(data)
+        return predictions
+
+    def calc_activations(self, data):
+        net = nn.Network(self.layers_construct,
+                         self.minibatch_size,
+                         params_file = self.params_file,
+                         logfile=self.predictions,
+                         activation_file=self.activations,
+                         restart=True)
+
+        activations = net.calc_activations(data)
+
+    def analyze(self):
+        memory = 0
+        compute = 0
+        for layer in self.layers:
+            print(layer['construct'])
+            print("Memory Footprint:")
+            print(layer['out_dims'])
+            layer_memory = np.product(layer['out_dims'])
+            print(layer_memory)
+            memory += layer_memory
+            print("Compute Footprint:")
+            print(layer['params'])
+            layer_compute = np.product(layer['params'])
+            print(layer_compute)
+            compute += layer_compute
+
+        print("Memory Footprint: {0}".format(memory))
+        print("Compute Footprint: {0}".format(compute))
 
 
 if __name__ == '__main__':
