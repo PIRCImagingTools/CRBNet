@@ -41,7 +41,7 @@ import theano.tensor as T
 from theano.tensor.nnet.conv3d2d import conv3d
 from theano.tensor.nnet import softmax
 from theano.tensor import shared_randomstreams
-import pool_ext as pool
+from theano.tensor.signal import pool
 import cPickle,time
 import matplotlib.pyplot as plt
 
@@ -446,8 +446,8 @@ class ConvPoolLayer(object):
             filters_shape = [self.filter_shape[idx] for idx in [0,4,1,3,2]],
             signals_shape = [self.image_shape[idx] for idx in [0,4,1,3,2]])
         conv_out = conv_out.dimshuffle(0, 2, 4, 3, 1)
-        self.pooled_out = pool.max_pool_3d(
-            input=conv_out, ds=self.poolsize, ignore_border=True)
+        self.pooled_out = pool.pool_3d(
+            input=conv_out, ws=self.poolsize, ignore_border=True)
         self.activation = self.pooled_out + self.b.dimshuffle('x', 0, 'x', 'x', 'x')##dimshuffle broadcasts the bias vector
                                                               ## across the 3D tensor dimvs
         self.output = self.activation_fn(self.activation)
